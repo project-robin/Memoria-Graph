@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+.streamlit/
+.env.local
+.local_data/
+.venv/
+temp_images/

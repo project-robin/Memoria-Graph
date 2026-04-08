@@ -1,0 +1,8 @@
+streamlit
+google-genai
+qdrant-client
+langgraph
+langgraph-checkpoint-sqlite
+langchain-core
+pillow
+opencv-python-headless
