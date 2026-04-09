@@ -3,6 +3,7 @@ __pycache__/
 .pytest_cache/
 .streamlit/
 .env.local
+.codex
 .local_data/
 .venv/
 temp_images/

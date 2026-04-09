@@ -25,33 +25,36 @@ class AppRuntime:
     checkpoint_store: object
 
 
-def get_or_create_runtime() -> AppRuntime:
+@st.cache_resource(show_spinner=False)
+def _build_shared_runtime() -> AppRuntime:
     ensure_app_dirs()
-    if "app_runtime" not in st.session_state:
-        genai_client = create_genai_client()
-        metadata_store = MetadataStore()
-        vector_store = VectorStore()
-        checkpoint_cm = SqliteSaver.from_conn_string(str(CHECKPOINT_DB_PATH))
-        checkpoint_store = checkpoint_cm.__enter__()
-        ingestion_graph = build_ingestion_graph(genai_client, metadata_store, vector_store)
-        search_graph = build_search_graph(
-            genai_client,
-            metadata_store,
-            vector_store,
-            checkpointer=checkpoint_store,
-        )
-        indexing_worker = IndexingWorker(metadata_store, ingestion_graph)
-        indexing_worker.start()
-        st.session_state.app_runtime = AppRuntime(
-            genai_client=genai_client,
-            metadata_store=metadata_store,
-            vector_store=vector_store,
-            search_graph=search_graph,
-            ingestion_graph=ingestion_graph,
-            indexing_worker=indexing_worker,
-            checkpoint_cm=checkpoint_cm,
-            checkpoint_store=checkpoint_store,
-        )
-    runtime: AppRuntime = st.session_state.app_runtime
+    genai_client = create_genai_client()
+    metadata_store = MetadataStore()
+    vector_store = VectorStore()
+    checkpoint_cm = SqliteSaver.from_conn_string(str(CHECKPOINT_DB_PATH))
+    checkpoint_store = checkpoint_cm.__enter__()
+    ingestion_graph = build_ingestion_graph(genai_client, metadata_store, vector_store)
+    search_graph = build_search_graph(
+        genai_client,
+        metadata_store,
+        vector_store,
+        checkpointer=checkpoint_store,
+    )
+    indexing_worker = IndexingWorker(metadata_store, ingestion_graph)
+    indexing_worker.start()
+    return AppRuntime(
+        genai_client=genai_client,
+        metadata_store=metadata_store,
+        vector_store=vector_store,
+        search_graph=search_graph,
+        ingestion_graph=ingestion_graph,
+        indexing_worker=indexing_worker,
+        checkpoint_cm=checkpoint_cm,
+        checkpoint_store=checkpoint_store,
+    )
+
+
+def get_or_create_runtime() -> AppRuntime:
+    runtime = _build_shared_runtime()
     runtime.indexing_worker.start()
     return runtime

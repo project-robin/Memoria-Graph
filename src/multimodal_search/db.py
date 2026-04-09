@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Iterator
 from uuid import uuid4
+import uuid
 
 from multimodal_search.config import (
     CHECKPOINT_DB_PATH,
@@ -26,7 +27,7 @@ def _now() -> str:
 
 
 def _json_dumps(value: object) -> str:
-    return json.dumps(value, sort_keys=True)
+    return json.dumps(_sanitize_for_json(value), sort_keys=True)
 
 
 def _json_loads(value: str | None, fallback: object) -> object:
@@ -47,6 +48,41 @@ def _sanitize_fts_query(text: str) -> str:
 
 def _hamming_distance(hex_a: str, hex_b: str) -> int:
     return (int(hex_a, 16) ^ int(hex_b, 16)).bit_count()
+
+
+def _sanitize_for_json(value: object) -> object:
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, dict):
+        return {str(key): _sanitize_for_json(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [_sanitize_for_json(item) for item in value]
+    if hasattr(value, "value"):
+        return _sanitize_for_json(getattr(value, "value"))
+    if hasattr(value, "args") and getattr(value, "args"):
+        return {
+            "type": value.__class__.__name__,
+            "args": [_sanitize_for_json(item) for item in getattr(value, "args")],
+        }
+    if hasattr(value, "__dict__"):
+        return {
+            "type": value.__class__.__name__,
+            **{key: _sanitize_for_json(item) for key, item in vars(value).items()},
+        }
+    return str(value)
+
+
+def _stable_image_uuid(source_hash: str, source_path: str) -> str:
+    return str(uuid.uuid5(uuid.NAMESPACE_URL, f"{source_hash}:{source_path}"))
+
+
+def _normalize_uuid(value: str | None, source_hash: str, source_path: str) -> str:
+    if not value:
+        return _stable_image_uuid(source_hash, source_path)
+    try:
+        return str(uuid.UUID(str(value)))
+    except Exception:
+        return _stable_image_uuid(source_hash, source_path)
 
 
 class MetadataStore:
@@ -504,7 +540,11 @@ class MetadataStore:
 
     def upsert_image(self, record: dict[str, object]) -> str:
         now = _now()
-        image_id = str(record.get("image_id") or uuid4().hex)
+        image_id = _normalize_uuid(
+            str(record.get("image_id")) if record.get("image_id") else None,
+            str(record["source_hash"]),
+            str(record["source_path"]),
+        )
         tags = record.get("tags") or []
         with self._connect() as connection:
             connection.execute(

@@ -19,6 +19,7 @@ from multimodal_search.llm import (
 )
 from multimodal_search.storage import VectorStore
 from multimodal_search.types import CandidateRecord, IngestionState, SearchState
+from multimodal_search.db import _stable_image_uuid
 
 
 def build_ingestion_graph(
@@ -46,13 +47,17 @@ def build_ingestion_graph(
     def dedupe_node(state: IngestionState) -> IngestionState:
         metadata_store.update_job_item_stage(state["job_item_id"], "dedupe")
         existing = metadata_store.find_image_by_path(state["source_path"])
-        if existing and existing.get("source_hash") == state["source_hash"]:
+        canonical_image_id = _stable_image_uuid(state["source_hash"], state["source_path"])
+        if existing and existing.get("source_hash") == state["source_hash"] and vector_store.has_image_vector(canonical_image_id):
             return {
                 **state,
-                "image_id": str(existing["image_id"]),
+                "image_id": canonical_image_id,
                 "skip_reason": "Already indexed with unchanged source hash.",
             }
-        return state
+        return {
+            **state,
+            "image_id": canonical_image_id,
+        }
 
     def enrich_node(state: IngestionState) -> IngestionState:
         metadata_store.update_job_item_stage(state["job_item_id"], "enrich")
@@ -87,7 +92,7 @@ def build_ingestion_graph(
         metadata_store.update_job_item_stage(state["job_item_id"], "face_cluster")
         if state.get("skip_reason"):
             return state
-        provisional_image_id = state.get("image_id") or state.get("source_hash", "")[:16]
+        provisional_image_id = state.get("image_id") or _stable_image_uuid(state["source_hash"], state["source_path"])
         detected_faces = detect_face_crops(state["thumbnail_path"], provisional_image_id)
         return {
             **state,
@@ -112,7 +117,7 @@ def build_ingestion_graph(
         if state.get("skip_reason"):
             return state
         existing = metadata_store.find_image_by_path(state["source_path"])
-        image_id = str(existing["image_id"]) if existing else (state.get("image_id") or state["source_hash"][:16])
+        image_id = str(existing["image_id"]) if existing else (state.get("image_id") or _stable_image_uuid(state["source_hash"], state["source_path"]))
         image_record = {
             "image_id": image_id,
             "source_path": state["source_path"],

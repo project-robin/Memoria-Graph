@@ -89,3 +89,15 @@ class VectorStore:
 
     def count_indexed_images(self) -> int:
         return int(self.client.count(collection_name=COLLECTION_NAME, exact=True).count)
+
+    def has_image_vector(self, image_id: str) -> bool:
+        try:
+            points = self.client.retrieve(
+                collection_name=COLLECTION_NAME,
+                ids=[image_id],
+                with_payload=False,
+                with_vectors=False,
+            )
+            return bool(points)
+        except Exception:
+            return False
